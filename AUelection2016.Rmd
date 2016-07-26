@@ -224,7 +224,7 @@ Election results obtained from the [AEC Tally Room](http://vtr.aec.gov.au/HouseD
 
 <br />
 
-Created with [flexdashboard](https://github.com/rstudio/flexdashboard/) by [Jonathan Carroll](http://jcarroll.com.au). A copy of the source for this page can be found [here](http://github.com/jonocarroll/) (feedback welcome). [Share this!](https://twitter.com/intent/tweet?text=Australian%20Federal%20Election%202016%20-%20Polling%20Place%20Breakdown%20using%20flexdashboard&url=http%3A%2F%2Fjcarroll.shinyapps.io%2FAusElection2016&original_referer=http%3A%2F%2Fjcarroll.shinyapps.io%2FAusElection2016)
+Created with [flexdashboard](https://github.com/rstudio/flexdashboard/) by [Jonathan Carroll](http://jcarroll.com.au). A copy of the source for this page can be found [here](https://github.com/jonocarroll/AUelection2016/blob/master/AUelection2016.Rmd) (feedback welcome). [Share this!](https://twitter.com/intent/tweet?text=Australian%20Federal%20Election%202016%20-%20Polling%20Place%20Breakdown%20using%20flexdashboard&url=http%3A%2F%2Fjcarroll.shinyapps.io%2FAusElection2016&original_referer=http%3A%2F%2Fjcarroll.shinyapps.io%2FAusElection2016)
 
 ```{r}
 renderImage({list(
@@ -390,7 +390,7 @@ Election results obtained from the [AEC Tally Room](http://vtr.aec.gov.au/HouseD
 
 <br />
 
-Created with [flexdashboard](https://github.com/rstudio/flexdashboard/) by [Jonathan Carroll](http://jcarroll.com.au). A copy of the source for this page can be found [here](http://github.com/jonocarroll/) (feedback welcome). [Share this!](https://twitter.com/intent/tweet?text=Australian%20Federal%20Election%202016%20-%20Polling%20Place%20Breakdown%20using%20flexdashboard&url=http%3A%2F%2Fjcarroll.shinyapps.io%2FAusElection2016&original_referer=http%3A%2F%2Fjcarroll.shinyapps.io%2FAusElection2016)
+Created with [flexdashboard](https://github.com/rstudio/flexdashboard/) by [Jonathan Carroll](http://jcarroll.com.au). A copy of the source for this page can be found [here](https://github.com/jonocarroll/AUelection2016/blob/master/AUelection2016.Rmd) (feedback welcome). [Share this!](https://twitter.com/intent/tweet?text=Australian%20Federal%20Election%202016%20-%20Polling%20Place%20Breakdown%20using%20flexdashboard&url=http%3A%2F%2Fjcarroll.shinyapps.io%2FAusElection2016&original_referer=http%3A%2F%2Fjcarroll.shinyapps.io%2FAusElection2016)
 
 ```{r}
 renderImage({list(
