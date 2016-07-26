@@ -1,0 +1,494 @@
+---
+title: "Australian Federal Election 2016 - Polling Place Breakdown [TENTATIVE]"
+output: 
+    flexdashboard::flex_dashboard:
+        orientation: columns
+        vertical_layout: fill
+        storyboard: false
+        theme: united
+        social: [ "twitter" ]
+        source_code: embed
+        highlight: pygments
+runtime: shiny
+---
+
+```{r setup, include=FALSE}
+## BASED ON BREXIT VOTE FLEXDASHBOARD:
+## https://github.com/p0bs/p0bs.github.io/blob/master/BrexitDashboard.Rmd
+## by Robin Penfold
+library(shiny)
+library(gpclib)
+library(rgeos)
+library(flexdashboard)
+library(htmltools)
+library(crosstalk)
+library(rmarkdown)        # Generates this html report
+library(knitr)            # Underpins this html report
+library(tidyr)            # Restructures data
+library(magrittr)         # Enables chainings of commands
+library(dplyr)            # Provides database functionality
+library(htmlwidgets)      # Enables responsive exhibits
+library(leaflet)          # Generates interactive map plots
+library(ggplot2)
+library(sp)
+library(plotly)
+
+# AEC <- rgdal::readOGR(dsn = ".", layer = "COM_ELB")
+# saveRDS(AEC, file = "AEC.rds")
+AEC <- readRDS(file = "AEC.rds")
+
+# polling <- read.csv("http://vtr.aec.gov.au/Downloads/GeneralPollingPlacesDownload-20499.csv",
+#                     stringsAsFactors = FALSE, skip = 1) %>% filter(!is.na(Latitude), !is.na(Longitude))
+# saveRDS(polling, "polling.rds")
+polling <- readRDS("polling.rds")
+
+# results_base <- "http://vtr.aec.gov.au/Downloads/HouseStateFirstPrefsByPollingPlaceDownload-20499-"
+# results.ACT <- read.csv(paste0(results_base,"ACT.csv"), stringsAsFactors = FALSE, skip = 1)
+# results.NSW <- read.csv(paste0(results_base,"NSW.csv"), stringsAsFactors = FALSE, skip = 1)
+# results.NT  <- read.csv(paste0(results_base,"NT.csv"),  stringsAsFactors = FALSE, skip = 1)
+# results.QLD <- read.csv(paste0(results_base,"QLD.csv"), stringsAsFactors = FALSE, skip = 1)
+# results.SA  <- read.csv(paste0(results_base,"SA.csv"),  stringsAsFactors = FALSE, skip = 1)
+# results.TAS <- read.csv(paste0(results_base,"TAS.csv"), stringsAsFactors = FALSE, skip = 1)
+# results.VIC <- read.csv(paste0(results_base,"VIC.csv"), stringsAsFactors = FALSE, skip = 1)
+# results.WA  <- read.csv(paste0(results_base,"WA.csv"),  stringsAsFactors = FALSE, skip = 1)
+# results <- bind_rows(mget(ls(pattern = "results\\.+.*")))
+# saveRDS(results, "results.rds")
+results <- readRDS("results.rds")
+
+# election <- merge(results, polling)
+# saveRDS(election, "election.rds")
+election <- readRDS("election.rds")
+
+election %<>% group_by(PollingPlaceID) %>% 
+    arrange(-OrdinaryVotes) %>% 
+    mutate(PPwinner    = first(PartyAb), 
+           PPvotes     = sum(OrdinaryVotes), 
+           Ncandidates = n_distinct(CandidateID)) %>% 
+    filter(PPvotes > 0)
+election %<>% 
+    group_by(DivisionID) %>% 
+    arrange(-OrdinaryVotes) %>% 
+    mutate(ELECwinner = first(PartyAb), 
+           ELECvotes  = sum(OrdinaryVotes))
+
+election.CT <- SharedData$new(election)
+
+# election2PP <- read.csv("http://vtr.aec.gov.au/Downloads/HouseTppByPollingPlaceDownload-20499.csv", 
+                        # stringsAsFactors = FALSE, skip = 1)
+# election2PPall <- merge(election2PP, polling)
+# saveRDS(election2PPall, file="election2PPall.rds")
+election2PP <- readRDS("election2PPall.rds")
+
+election2PP %<>% rename(LP = Liberal.National.Coalition.Votes,
+                        ALP = Australian.Labor.Party.Votes)
+election2PP %<>% 
+    group_by(PollingPlaceID) %>% 
+    mutate(PPwinner = ifelse(LP + ALP == 0, "NA", 
+                             ifelse(LP > ALP, "LP", 
+                                    ifelse(LP == ALP, "EVEN", "ALP"))))
+election2PP %<>% 
+    group_by(DivisionID) %>% 
+    summarise(ElecLPVotes = sum(LP), 
+              ElecALPVotes = sum(ALP),
+              ELECwinner = ifelse(ElecLPVotes + ElecALPVotes == 0, "NA", 
+                                  ifelse(ElecLPVotes > ElecALPVotes, "LP", "ALP"))) %>% 
+    merge(election2PP)
+
+election2PP.CT <- SharedData$new(election2PP)
+
+partycols <- c("blue","red","darkgreen","orange","green","darkblue",
+               "skyblue","brown","black","yellow","darkred","grey",
+               "purple","white","grey","grey","grey")
+partylabs <- c("LP","ALP","NP","XEN","GRN","LNP","CLP","KAP","ON",
+               "DHJP","ARF","AJP","IND","INF","CDP","FFP","LDP")
+
+dfpp <- reactive({
+    
+    df_raw <- election.CT$data(withSelection = TRUE) %>% filter(StateAb %in% input$state)
+    
+    df <- df_raw %>% 
+        group_by(DivisionNm, PollingPlaceNm) %>% 
+        summarise(PPwinner = unique(PPwinner),
+                  nVotes   = sum(OrdinaryVotes),
+                  Latitude = unique(Latitude),
+                  Longitude = unique(Longitude))
+    
+    df$PPwinner <- factor(df$PPwinner, levels = partylabs)
+    df <- arrange(df, nVotes)
+    
+    df
+    
+})
+
+dfpp2PP <- reactive({
+    
+    df_raw <- election2PP.CT$data(withSelection = TRUE) %>% filter(StateAb %in% input$state2PP)
+    
+    df <- df_raw
+    
+    df$PPwinner <- factor(df$PPwinner, levels = c("LP","ALP","EVEN","NA"))
+    
+    df
+    
+})
+
+dfrawvotes <- reactive({
+    
+    df_raw <- election.CT$data(withSelection = TRUE) %>% filter(StateAb %in% input$state)
+    
+    df <- df_raw %>% 
+        group_by(DivisionNm, PartyAb) %>% 
+        summarise(nVotes   = sum(OrdinaryVotes))
+    
+    df$PartyAb <- factor(df$PartyAb, levels = partylabs)
+    df <- arrange(df, PartyAb)
+    
+    df    
+    
+})
+
+dfrawvotes2PP <- reactive({
+    
+    df_raw <- election2PP.CT$data(withSelection = TRUE) %>% filter(StateAb %in% input$state2PP)
+    
+    df <- df_raw %>% gather(Party, Votes, LP, ALP)
+    
+    df$Party <- factor(df$Party, levels = c("LP", "ALP","EVEN","NA"))
+    
+    df    
+    
+})
+
+
+dfswing <- reactive({
+    
+    df_raw <- election.CT$data(withSelection = TRUE) %>% filter(StateAb %in% input$state)
+    
+    df <- df_raw %>%
+        group_by(DivisionNm, PollingPlaceID, PartyAb) %>%
+        summarise(swing     = mean(Swing),
+                  PPwinner  = unique(PPwinner))
+    
+    df$PPwinner <- factor(df$PPwinner, levels = partylabs)
+    
+    df
+    
+})
+
+dfAEC <- reactive({
+    
+    newAEC <- AEC[AEC$State == input$state, ]
+    newAEC@data <- merge(AEC@data %>% filter(State %in% input$state), 
+                         election %>% filter(StateAb %in% input$state) %>% 
+                             group_by(DivisionNm) %>% 
+                             summarise(ELECwinner = unique(ELECwinner)), 
+                         by.x = "Elect_div", by.y = "DivisionNm")
+    
+    newAEC
+    
+})
+
+dfAEC2PP <- reactive({
+    
+    newAEC <- AEC[AEC$State == input$state2PP, ]
+    newAEC@data <- merge(AEC@data %>% filter(State %in% input$state2PP), 
+                         election2PP %>% filter(StateAb %in% input$state2PP) %>% 
+                             group_by(DivisionNm) %>% 
+                             summarise(ELECwinner = unique(ELECwinner)), 
+                         by.x = "Elect_div", by.y = "DivisionNm")
+    
+    newAEC
+    
+})
+
+
+```
+
+First Preferences
+==================
+
+Column {.sidebar}
+-----------------------------------------------------------------------
+
+### 
+
+```{r}
+selectInput("state", label = "Select which State/Territory to visualise", choices = levels(AEC$State), selected = "SA")
+```
+
+© Commonwealth of Australia 2016
+
+Election results obtained from the [AEC Tally Room](http://vtr.aec.gov.au/HouseDownloadsMenu-20499-Csv.htm). The Australian Electoral Commission ([AEC](http://www.aec.gov.au)) is an independent statutory authority that is politically neutral and does not sponsor, endorse or approve of material found on sites that link to the AEC website (www.aec.gov.au).
+
+[Electoral spatial boundaries](http://www.aec.gov.au/Electorates/gis/gis_datadownload.htm) obtained from the Australian Electoral Commission ([AEC](http://www.aec.gov.au)) and are © Commonwealth of Australia (Australian Electoral Commission) 2016.
+
+<br />
+
+Created with [flexdashboard](https://github.com/rstudio/flexdashboard/) by [Jonathan Carroll](http://jcarroll.com.au). A copy of the source for this page can be found [here](http://github.com/jonocarroll/) (feedback welcome). [Share this!](https://twitter.com/intent/tweet?text=Australian%20Federal%20Election%202016%20-%20Polling%20Place%20Breakdown%20using%20flexdashboard&url=http%3A%2F%2Fjcarroll.shinyapps.io%2FAusElection2016&original_referer=http%3A%2F%2Fjcarroll.shinyapps.io%2FAusElection2016)
+
+```{r}
+renderImage({list(
+    src = "cc-icon.png",
+    contentType = "image/png",
+    alt = "CC-BY-3.0")}, 
+    deleteFile = FALSE
+)
+```
+
+Column {.tabset .tabset-fade} 
+-----------------------------------------------------------------------
+
+### Swing
+
+```{r fig.height=5, fig.width=5}
+
+renderPlot({
+    
+    myCols <- partycols
+    names(myCols) <- levels(dfpp()$PPwinner)
+    
+    gg <- ggplot(dfswing(), aes(x = DivisionNm, y = swing)) + 
+        geom_point(aes(col = PPwinner), alpha = 0.5, position = "jitter") +
+        scale_color_manual(values = myCols, name = "PP Winner") +
+        theme_minimal() +
+        theme(axis.text.x = element_text(angle = 90)) +
+        labs(x = "Division", y = "Swing at each Polling Place")
+    
+    print(gg)
+    
+})
+
+```
+
+### Votes per Polling Place 
+
+```{r, fig.height=5, fig.width=5}
+
+renderPlotly({
+    plot_ly(dfpp(), 
+            type = "scatter", 
+            x = PollingPlaceNm, 
+            y = nVotes, 
+            text = paste("(",DivisionNm,") ",nVotes," Votes"),
+            mode = "markers") %>%
+        layout(dragmode = "select", 
+               xaxis = list(title = "Polling Place", showticklabels = FALSE), 
+               yaxis = list(tickformat = '0.0f'))
+})
+
+```
+
+### Votes Tallied by Polling Places
+
+```{r fig.height=8, fig.width=5}
+
+renderPlot({
+    
+    myCols <- partycols    
+    names(myCols) <- levels(dfpp()$PPwinner)
+    
+    gg <- ggplot(dfpp(), aes(x = DivisionNm)) +
+        scale_fill_manual(values = myCols, name = "PP Winner") +
+        scale_alpha_manual(values = c(1,0.25), guide = FALSE) +
+        geom_bar(stat = "count", aes(fill = PPwinner)) + 
+        theme_minimal() + 
+        labs(y = "Number of Polling Places Won by Party") + 
+        theme(axis.text.x = element_text(angle = 90))
+    
+    print(gg)
+    
+    
+})
+
+```
+
+### Raw Votes
+
+```{r fig.height=8, fig.width=5}
+
+renderPlot({
+    
+    myCols <- partycols    
+    names(myCols) <- levels(dfrawvotes()$PartyAb)
+    
+    gg <- ggplot(dfrawvotes(), aes(x = DivisionNm)) +
+        scale_fill_manual(values = myCols, name = "Party") +
+        scale_alpha_manual(values = c(1,0.25), guide = FALSE) +
+        geom_bar(stat = "identity", position = "fill", aes(y = nVotes, fill = PartyAb)) +
+        theme_minimal() + 
+        labs(y = "Raw Votes Won by Party") + 
+        theme(axis.text.x = element_text(angle = 90))
+    
+    print(gg)
+    
+})
+
+```
+
+Column
+-----------------------------------------------------------------------
+
+### Mapped Polling Places
+
+```{r fig.height=7, fig.width=8}
+
+renderLeaflet({
+    
+    rAEC  <- dfAEC()
+    rdfpp <- dfpp()
+    
+    factpal  <- colorFactor(partycols , factor(rAEC@data$ELECwinner, levels = partylabs))
+    factpal2 <- colorFactor(partycols , factor(rdfpp$PPwinner, levels = partylabs))
+
+    # rdfpp$PPvotesF <- cut(rdfpp$nVotes, breaks = c(0,100,500,1000,2000,5000,10000,20000), right = FALSE, labels = c(1,6,8,10,12,14,16) )
+
+    map <- leaflet(data = rdfpp) %>% 
+        addProviderTiles("CartoDB.Positron", 
+                         options = providerTileOptions(opacity = 0.6)) %>%
+        addPolygons(data = rAEC, 
+                    fillColor = ~factpal(ELECwinner), 
+                    color = "grey", 
+                    weight = 3, 
+                    popup = ~paste0("Electorate: ",Elect_div)) %>% 
+        setView(lng = median(rdfpp$Longitude), 
+                lat = median(rdfpp$Latitude), 
+                zoom = 11) %>%
+        addCircleMarkers(lat = ~Latitude, 
+                         lng = ~Longitude, 
+                         popup = ~PollingPlaceNm, 
+                         color = ~factpal2(PPwinner), 
+                         radius = 6,
+                         # radius = ~PPvotesF, 
+                         stroke = FALSE, 
+                         fillOpacity = 0.9) %>% 
+        addLegend(colors = partycols, 
+                  labels = partylabs) 
+    
+    map
+    
+})
+
+```
+
+Two Party Preferred
+==================
+
+Column {.sidebar}
+-----------------------------------------------------------------------
+
+### 
+
+```{r}
+selectInput("state2PP", label = "Select which State/Territory to visualise", choices = levels(AEC$State), selected = "SA")
+```
+
+© Commonwealth of Australia 2016
+
+Election results obtained from the [AEC Tally Room](http://vtr.aec.gov.au/HouseDownloadsMenu-20499-Csv.htm). The Australian Electoral Commission ([AEC](http://www.aec.gov.au)) is an independent statutory authority that is politically neutral and does not sponsor, endorse or approve of material found on sites that link to the AEC website (www.aec.gov.au).
+
+[Electoral spatial boundaries](http://www.aec.gov.au/Electorates/gis/gis_datadownload.htm) obtained from the Australian Electoral Commission ([AEC](http://www.aec.gov.au)) and are © Commonwealth of Australia (Australian Electoral Commission) 2016.
+
+<br />
+
+Created with [flexdashboard](https://github.com/rstudio/flexdashboard/) by [Jonathan Carroll](http://jcarroll.com.au). A copy of the source for this page can be found [here](http://github.com/jonocarroll/) (feedback welcome). [Share this!](https://twitter.com/intent/tweet?text=Australian%20Federal%20Election%202016%20-%20Polling%20Place%20Breakdown%20using%20flexdashboard&url=http%3A%2F%2Fjcarroll.shinyapps.io%2FAusElection2016&original_referer=http%3A%2F%2Fjcarroll.shinyapps.io%2FAusElection2016)
+
+```{r}
+renderImage({list(
+    src = "cc-icon.png",
+    contentType = "image/png",
+    alt = "CC-BY-3.0")}, 
+    deleteFile = FALSE
+)
+```
+
+Column {.tabset .tabset-fade} 
+-----------------------------------------------------------------------
+
+### Votes Tallied by Polling Places
+
+```{r fig.height=8, fig.width=5}
+
+renderPlot({
+    
+    myCols <- c("blue","red","grey","#D3D3D3")   
+    names(myCols) <- c("LP","ALP","EVEN","NA")
+    
+    gg <- ggplot(dfpp2PP(), aes(x = DivisionNm)) +
+        scale_fill_manual(values = myCols, name = "PP Winner") +
+        scale_alpha_manual(values = c(1,0.25), guide = FALSE) +
+        geom_bar(stat = "count", aes(fill = PPwinner, alpha = selected_)) + 
+        theme_minimal() + 
+        labs(y = "Number of Polling Places Won by Party") + 
+        theme(axis.text.x = element_text(angle = 90))
+    
+    print(gg)
+    
+})
+
+```
+
+### Raw Votes
+
+```{r fig.height=8, fig.width=5}
+
+renderPlot({
+    
+    myCols <- c("blue","red","#D3D3D3")   
+    names(myCols) <- c("LP","ALP","NA")
+    
+    gg <- ggplot(dfrawvotes2PP(), aes(x = DivisionNm)) +
+        scale_alpha_manual(values = c(1,0.25), guide = FALSE) +
+        geom_bar(stat = "identity", position = "fill", aes(y = Votes, fill = Party)) +
+        scale_fill_manual(values = myCols, name = "Party") +
+        theme_minimal() + 
+        labs(y = "Raw Votes Won by Party") + 
+        theme(axis.text.x = element_text(angle = 90))
+    
+    print(gg)
+    
+})
+
+```
+
+Column
+-----------------------------------------------------------------------
+
+### Mapped Polling Places
+
+```{r fig.height=7, fig.width=8}
+
+renderLeaflet({
+    
+    rAEC  <- dfAEC2PP()
+    rdfpp <- dfpp2PP()
+    
+    factpal  <- colorFactor(c("blue","red","grey","#D3D3D3"), factor(rAEC@data$ELECwinner, levels = c("LP","ALP","EVEN","NA")))
+    factpal2 <- colorFactor(c("blue","red","grey","#D3D3D3"), factor(rdfpp$PPwinner, levels = c("LP","ALP","EVEN","NA")))
+    
+    map <- leaflet(data = rdfpp) %>% 
+        addProviderTiles("CartoDB.Positron", 
+                         options = providerTileOptions(opacity = 0.6)) %>%
+        addPolygons(data = rAEC, 
+                    fillColor = ~factpal(ELECwinner), 
+                    color = "grey", 
+                    weight = 3, 
+                    popup = ~paste0("Electorate: ",Elect_div)) %>% 
+        setView(lng = median(rdfpp$Longitude), 
+                lat = median(rdfpp$Latitude), 
+                zoom = 11) %>%
+        addCircleMarkers(lat = ~Latitude, 
+                         lng = ~Longitude, 
+                         popup = ~PollingPlaceNm, 
+                         color = ~factpal2(PPwinner), 
+                         radius = 6, 
+                         stroke = FALSE, 
+                         fillOpacity = 0.9) %>% 
+        addLegend(colors = c("blue","red","grey","#D3D3D3"), 
+                  labels = c("LP","ALP","EVEN","NA"))
+    
+    map
+    
+})
+
+```
+
